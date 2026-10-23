@@ -41,8 +41,15 @@ class GoogleAuthService {
   static const String _keyUserName = 'auth_user_name';
   static const String _keyUserPhoto = 'auth_user_photo';
 
+  static const _androidOptions = AndroidOptions(
+    resetOnError: true,
+  );
+
   GoogleAuthService({FlutterSecureStorage? secureStorage})
-    : _secureStorage = secureStorage ?? const FlutterSecureStorage();
+    : _secureStorage = secureStorage ??
+          const FlutterSecureStorage(
+            aOptions: _androidOptions,
+          );
 
   AuthUser? get currentUser => _currentUser;
   bool get isSignedIn => _currentUser != null;
@@ -77,7 +84,17 @@ class GoogleAuthService {
       debugPrint('GoogleSignIn events listen error: $e');
     }
 
-    // Seamlessly restore user session from local secure storage / SQLite
+    // 1. Attempt lightweight silent restoration from Google Identity Services
+    try {
+      final restored = await _googleSignIn.attemptLightweightAuthentication();
+      if (restored != null) {
+        await _setAccount(restored);
+      }
+    } catch (e) {
+      debugPrint('GoogleSignIn lightweight auth check notice: $e');
+    }
+
+    // 2. Seamlessly restore user session from local secure storage / SQLite
     // without triggering any Google sign-in prompts on app startup.
     String? savedEmail;
     String? savedId;
@@ -85,35 +102,77 @@ class GoogleAuthService {
     String? savedPhoto;
 
     try {
-      savedEmail = await _secureStorage.read(key: _keyUserEmail);
-      savedId = await _secureStorage.read(key: _keyUserId);
-      savedName = await _secureStorage.read(key: _keyUserName);
-      savedPhoto = await _secureStorage.read(key: _keyUserPhoto);
+      savedEmail = await _secureStorage.read(
+        key: _keyUserEmail,
+        aOptions: _androidOptions,
+      );
+      savedId = await _secureStorage.read(
+        key: _keyUserId,
+        aOptions: _androidOptions,
+      );
+      savedName = await _secureStorage.read(
+        key: _keyUserName,
+        aOptions: _androidOptions,
+      );
+      savedPhoto = await _secureStorage.read(
+        key: _keyUserPhoto,
+        aOptions: _androidOptions,
+      );
     } catch (e) {
       debugPrint('SecureStorage read notice: $e');
     }
 
-    // Fallback to SQLite sync_state if secure storage was freshly cleared or empty
+    // 3. Robust fallback to SQLite (sync_state and documents) if secure storage was empty
     if (savedEmail == null || savedEmail.isEmpty) {
       try {
         final db = await AppDatabase().database;
-        final rows = await db.query(
+        final syncRows = await db.query(
           AppConstants.tableSyncState,
           columns: ['connected_account_key'],
           limit: 1,
         );
-        if (rows.isNotEmpty) {
-          final email = rows.first['connected_account_key'] as String?;
+        if (syncRows.isNotEmpty) {
+          final email = syncRows.first['connected_account_key'] as String?;
           if (email != null && email.isNotEmpty) {
             savedEmail = email;
-            savedId = email;
-            savedName = email.split('@').first;
-            try {
-              await _secureStorage.write(key: _keyUserId, value: savedId);
-              await _secureStorage.write(key: _keyUserEmail, value: savedEmail);
-              await _secureStorage.write(key: _keyUserName, value: savedName);
-            } catch (_) {}
           }
+        }
+
+        if (savedEmail == null || savedEmail.isEmpty) {
+          final docRows = await db.query(
+            AppConstants.tableDocuments,
+            columns: ['account_key'],
+            where: 'account_key IS NOT NULL AND account_key != ""',
+            limit: 1,
+          );
+          if (docRows.isNotEmpty) {
+            final email = docRows.first['account_key'] as String?;
+            if (email != null && email.isNotEmpty) {
+              savedEmail = email;
+            }
+          }
+        }
+
+        if (savedEmail != null && savedEmail.isNotEmpty) {
+          savedId = savedEmail;
+          savedName = savedEmail.split('@').first;
+          try {
+            await _secureStorage.write(
+              key: _keyUserId,
+              value: savedId,
+              aOptions: _androidOptions,
+            );
+            await _secureStorage.write(
+              key: _keyUserEmail,
+              value: savedEmail,
+              aOptions: _androidOptions,
+            );
+            await _secureStorage.write(
+              key: _keyUserName,
+              value: savedName,
+              aOptions: _androidOptions,
+            );
+          } catch (_) {}
         }
       } catch (e) {
         debugPrint('GoogleAuthService: SQLite fallback notice - $e');
@@ -142,13 +201,29 @@ class GoogleAuthService {
       photoUrl: account.photoUrl,
     );
     try {
-      await _secureStorage.write(key: _keyUserId, value: account.id);
-      await _secureStorage.write(key: _keyUserEmail, value: account.email);
+      await _secureStorage.write(
+        key: _keyUserId,
+        value: account.id,
+        aOptions: _androidOptions,
+      );
+      await _secureStorage.write(
+        key: _keyUserEmail,
+        value: account.email,
+        aOptions: _androidOptions,
+      );
       if (account.displayName != null) {
-        await _secureStorage.write(key: _keyUserName, value: account.displayName);
+        await _secureStorage.write(
+          key: _keyUserName,
+          value: account.displayName,
+          aOptions: _androidOptions,
+        );
       }
       if (account.photoUrl != null) {
-        await _secureStorage.write(key: _keyUserPhoto, value: account.photoUrl);
+        await _secureStorage.write(
+          key: _keyUserPhoto,
+          value: account.photoUrl,
+          aOptions: _androidOptions,
+        );
       }
     } catch (e) {
       debugPrint('GoogleAuthService secure storage write notice: $e');
@@ -211,7 +286,7 @@ class GoogleAuthService {
   /// the required Authorization header for Google Drive API requests.
   http.Client createAuthenticatedClient() {
     return _AuthenticatedHttpClient(http.Client(), () async {
-      return await getAuthHeaders(promptIfNecessary: true);
+      return await getAuthHeaders(promptIfNecessary: false);
     });
   }
 
@@ -225,10 +300,10 @@ class GoogleAuthService {
     }
     _rawAccount = null;
     _currentUser = null;
-    await _secureStorage.delete(key: _keyUserId);
-    await _secureStorage.delete(key: _keyUserEmail);
-    await _secureStorage.delete(key: _keyUserName);
-    await _secureStorage.delete(key: _keyUserPhoto);
+    await _secureStorage.delete(key: _keyUserId, aOptions: _androidOptions);
+    await _secureStorage.delete(key: _keyUserEmail, aOptions: _androidOptions);
+    await _secureStorage.delete(key: _keyUserName, aOptions: _androidOptions);
+    await _secureStorage.delete(key: _keyUserPhoto, aOptions: _androidOptions);
   }
 
   /// Disconnects account permissions completely.

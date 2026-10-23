@@ -11,8 +11,10 @@ class AppLockScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final lockProvider = context.watch<AppLockProvider>();
 
-    return Scaffold(
-      backgroundColor: AppTheme.surfaceBg,
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
+        backgroundColor: AppTheme.surfaceBg,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 28.0, vertical: 36.0),
@@ -91,7 +93,7 @@ class AppLockScreen extends StatelessWidget {
                         ),
                         const SizedBox(width: 6),
                         const Text(
-                          'Lock again after unlocking:',
+                          'Lock after leaving app:',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
@@ -235,8 +237,9 @@ class AppLockScreen extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildTimerChip({
     required BuildContext context,

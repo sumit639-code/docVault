@@ -13,9 +13,6 @@ class AppLockProvider with ChangeNotifier, WidgetsBindingObserver {
 
   int _autoLockTimeoutSeconds = 0; // 0 = Immediately, max = 300 (5 mins)
   DateTime? _pausedAt;
-  DateTime? _lastUnlockedAt;
-  DateTime? _lastInteractionAt;
-  Timer? _inactivityTimer;
 
   AppLockProvider({AppLockService? lockService})
       : _lockService = lockService ?? AppLockService() {
@@ -69,28 +66,12 @@ class AppLockProvider with ChangeNotifier, WidgetsBindingObserver {
     final clamped = seconds.clamp(0, AppLockService.maxAutoLockSeconds);
     _autoLockTimeoutSeconds = clamped;
     await _lockService.setAutoLockTimeout(clamped);
-    _startInactivityTimer();
     notifyListeners();
   }
 
-  /// Records user touch or UI interaction to reset the auto-lock inactivity timer.
+  /// Records user touch or UI interaction.
   void recordInteraction() {
-    _lastInteractionAt = DateTime.now();
-  }
-
-  void _startInactivityTimer() {
-    _inactivityTimer?.cancel();
-    if (_autoLockTimeoutSeconds > 0) {
-      _inactivityTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-        if (!_isLocked && _isEnabled) {
-          final now = DateTime.now();
-          final lastActive = _lastInteractionAt ?? _lastUnlockedAt ?? now;
-          if (now.difference(lastActive).inSeconds >= _autoLockTimeoutSeconds) {
-            lock();
-          }
-        }
-      });
-    }
+    // App stays unlocked while open in foreground
   }
 
   /// Prompts biometric / PIN authentication.
@@ -115,10 +96,7 @@ class AppLockProvider with ChangeNotifier, WidgetsBindingObserver {
       if (success) {
         _isLocked = false;
         _authError = null;
-        _lastUnlockedAt = DateTime.now();
-        _lastInteractionAt = DateTime.now();
         _pausedAt = null;
-        _startInactivityTimer();
       } else {
         _isLocked = true;
         _authError = 'Authentication was not completed. Please try again.';
@@ -137,7 +115,6 @@ class AppLockProvider with ChangeNotifier, WidgetsBindingObserver {
   /// Manually locks the vault.
   void lock() {
     if (_isEnabled) {
-      _inactivityTimer?.cancel();
       _isLocked = true;
       notifyListeners();
     }
@@ -159,7 +136,7 @@ class AppLockProvider with ChangeNotifier, WidgetsBindingObserver {
     _isEnabled = enable;
     if (!enable) {
       _isLocked = false;
-      _inactivityTimer?.cancel();
+      _pausedAt = null;
     }
     notifyListeners();
     return true;
@@ -168,11 +145,12 @@ class AppLockProvider with ChangeNotifier, WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
+      if (_isAuthenticating) return;
+      // Start exit timer when user leaves or minimizes the app
       _pausedAt = DateTime.now();
       if (_isEnabled && _autoLockTimeoutSeconds == 0) {
-        // Immediate lock on background
+        // Immediate lock on app exit
         _isLocked = true;
-        _inactivityTimer?.cancel();
         notifyListeners();
       }
     } else if (state == AppLifecycleState.resumed) {
@@ -182,24 +160,26 @@ class AppLockProvider with ChangeNotifier, WidgetsBindingObserver {
         } else if (!_isLocked && _autoLockTimeoutSeconds > 0 && _pausedAt != null) {
           final elapsed = DateTime.now().difference(_pausedAt!).inSeconds;
           if (elapsed >= _autoLockTimeoutSeconds) {
-            // Background duration exceeded the configured lock timer!
+            // Exit duration exceeded the configured timeout!
             _isLocked = true;
-            _inactivityTimer?.cancel();
             notifyListeners();
             unlock();
           } else {
-            // Within grace period; keep vault unlocked
+            // Returned within the grace period; stay unlocked
             _pausedAt = null;
-            recordInteraction();
           }
         }
       }
     }
   }
 
+  @visibleForTesting
+  void simulateBackgroundDuration(Duration duration) {
+    _pausedAt = DateTime.now().subtract(duration);
+  }
+
   @override
   void dispose() {
-    _inactivityTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

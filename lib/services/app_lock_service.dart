@@ -14,11 +14,18 @@ class AppLockService {
   /// Maximum allowed auto-lock timer duration: 5 minutes (300 seconds).
   static const int maxAutoLockSeconds = 300;
 
+  static const _androidOptions = AndroidOptions(
+    resetOnError: true,
+  );
+
   AppLockService({
     LocalAuthentication? localAuth,
     FlutterSecureStorage? secureStorage,
   })  : _localAuth = localAuth ?? LocalAuthentication(),
-        _secureStorage = secureStorage ?? const FlutterSecureStorage();
+        _secureStorage = secureStorage ??
+            const FlutterSecureStorage(
+              aOptions: _androidOptions,
+            );
 
   /// Checks if the device has biometric hardware or device PIN/passcode capability.
   Future<bool> isDeviceSupported() async {
@@ -36,7 +43,10 @@ class AppLockService {
   /// Defaults to TRUE so documents are protected by default.
   Future<bool> isAppLockEnabled() async {
     try {
-      final val = await _secureStorage.read(key: _keyAppLockEnabled);
+      final val = await _secureStorage.read(
+        key: _keyAppLockEnabled,
+        aOptions: _androidOptions,
+      );
       if (val == null) {
         // Enabled by default on fresh install
         return true;
@@ -53,6 +63,7 @@ class AppLockService {
     await _secureStorage.write(
       key: _keyAppLockEnabled,
       value: enabled ? 'true' : 'false',
+      aOptions: _androidOptions,
     );
   }
 
@@ -60,7 +71,10 @@ class AppLockService {
   /// Defaults to 0 (Immediately). Maximum allowed is 300s (5 minutes).
   Future<int> getAutoLockTimeout() async {
     try {
-      final val = await _secureStorage.read(key: _keyAutoLockTimeout);
+      final val = await _secureStorage.read(
+        key: _keyAutoLockTimeout,
+        aOptions: _androidOptions,
+      );
       if (val == null) return 0;
       final parsed = int.tryParse(val) ?? 0;
       return parsed.clamp(0, maxAutoLockSeconds);
@@ -76,6 +90,7 @@ class AppLockService {
     await _secureStorage.write(
       key: _keyAutoLockTimeout,
       value: clamped.toString(),
+      aOptions: _androidOptions,
     );
   }
 

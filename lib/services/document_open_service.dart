@@ -13,11 +13,16 @@ import '../features/documents/universal_viewer_screen.dart';
 import '../providers/auth_provider.dart';
 import '../providers/document_provider.dart';
 import 'google_drive_service.dart';
+import 'offline_storage_service.dart';
 
 class DocumentOpenService {
   final GoogleDriveService driveService;
+  final OfflineStorageService _offlineService;
 
-  DocumentOpenService({required this.driveService});
+  DocumentOpenService({
+    required this.driveService,
+    OfflineStorageService? offlineService,
+  }) : _offlineService = offlineService ?? OfflineStorageService();
 
   /// Opens the document directly on the device with a supported viewer application.
   /// If the document is not yet saved locally, it downloads it first and then opens it.
@@ -40,15 +45,15 @@ class DocumentOpenService {
       return;
     }
 
-    // 2. Ensure file is available locally
-    final isDownloaded = doc.localFilePath != null &&
-        File(doc.localFilePath!).existsSync();
+    // 2. Ensure file is available locally without duplicate downloads
+    final docProvider = context.read<DocumentProvider>();
+    final existingFile = await docProvider.checkDuplicateLocalFile(doc);
 
     File localFile;
-    if (isDownloaded) {
-      localFile = File(doc.localFilePath!);
+    if (existingFile != null && existingFile.existsSync() && existingFile.lengthSync() > 0) {
+      localFile = existingFile;
     } else {
-      final docProvider = context.read<DocumentProvider>();
+      if (!context.mounted) return;
       final authService = context.read<AuthProvider>().authService;
       final driveService = GoogleDriveService(authService: authService);
 
@@ -189,11 +194,20 @@ class DocumentOpenService {
   }
 
   /// Explicit user download: saves file to app-managed storage and opens with native viewer.
+  /// Checks for existing duplicate files first to prevent downloading double.
   Future<File?> downloadAndOpenLocally({
     required DocumentModel document,
     void Function(String message)? onStatus,
   }) async {
     try {
+      // 1. Check if duplicate file already exists locally
+      final existing = await _offlineService.getExistingLocalFile(document);
+      if (existing != null && await existing.exists() && await existing.length() > 0) {
+        onStatus?.call('Opening existing local file...');
+        await OpenFilex.open(existing.path);
+        return existing;
+      }
+
       onStatus?.call('Preparing download directory...');
       final appDir = await getApplicationDocumentsDirectory();
       final downloadsDir = Directory(p.join(appDir.path, 'downloaded_docs'));
@@ -206,6 +220,16 @@ class DocumentOpenService {
       final localFile = File(
         p.join(downloadsDir.path, '${document.driveFileId}_$safeName'),
       );
+
+      // 2. Check if already downloaded in downloaded_docs
+      if (await localFile.exists() && await localFile.length() > 0) {
+        onStatus?.call('Opening existing local file...');
+        final result = await OpenFilex.open(localFile.path);
+        if (result.type != ResultType.done) {
+          debugPrint('OpenFilex result: ${result.message}');
+        }
+        return localFile;
+      }
 
       onStatus?.call('Downloading from Google Drive...');
       await driveService.downloadFile(document.driveFileId, localFile);
@@ -226,13 +250,8 @@ class DocumentOpenService {
   /// Checks if document is already downloaded locally.
   Future<bool> isDownloadedLocally(DocumentModel document) async {
     try {
-      final appDir = await getApplicationDocumentsDirectory();
-      final downloadsDir = Directory(p.join(appDir.path, 'downloaded_docs'));
-      final safeName = document.name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-      final localFile = File(
-        p.join(downloadsDir.path, '${document.driveFileId}_$safeName'),
-      );
-      return await localFile.exists();
+      final existing = await _offlineService.getExistingLocalFile(document);
+      return existing != null;
     } catch (_) {
       return false;
     }

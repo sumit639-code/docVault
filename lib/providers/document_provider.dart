@@ -342,6 +342,16 @@ class DocumentProvider with ChangeNotifier {
     }
   }
 
+  /// Checks whether a duplicate/existing copy of this document already exists locally.
+  /// If found and SQLite was not updated, refreshes documents list.
+  Future<File?> checkDuplicateLocalFile(DocumentModel document) async {
+    final file = await _offlineService.getExistingLocalFile(document);
+    if (file != null && document.localFilePath != file.path) {
+      await loadDocuments();
+    }
+    return file;
+  }
+
   /// Downloads a document to device storage for offline use.
   Future<File> downloadDocumentForOffline({
     required GoogleDriveService driveService,

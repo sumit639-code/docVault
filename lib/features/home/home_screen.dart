@@ -1293,6 +1293,27 @@ class _HomeScreenState extends State<HomeScreen> {
     final authService = context.read<AuthProvider>().authService;
     final driveService = GoogleDriveService(authService: authService);
 
+    // Prevent duplicate download if file is already on device
+    final existingFile = await docProvider.checkDuplicateLocalFile(doc);
+    if (existingFile != null && existingFile.existsSync() && existingFile.lengthSync() > 0) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('"${doc.name}" is already downloaded!'),
+            backgroundColor: AppTheme.primaryTeal,
+            action: SnackBarAction(
+              label: 'Open',
+              textColor: Colors.white,
+              onPressed: () => docProvider.openOfflineDocument(doc),
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    if (!context.mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(

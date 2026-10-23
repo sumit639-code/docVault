@@ -11,8 +11,8 @@ import '../../providers/auth_provider.dart';
 import '../../providers/document_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../../services/google_drive_service.dart';
+import '../../app.dart';
 import '../../services/offline_storage_service.dart';
-import '../auth/connect_drive_screen.dart';
 import '../folders/folder_selection_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -139,7 +139,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
                     ),
                     subtitle: Text(
-                      'Lock again after: ${lockProvider.autoLockTimeoutLabel}',
+                      'Lock after leaving app: ${lockProvider.autoLockTimeoutLabel}',
                       style: const TextStyle(fontSize: 12),
                     ),
                     trailing: Container(
@@ -787,7 +787,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await authProvider.disconnect();
       if (context.mounted) {
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const ConnectDriveScreen()),
+          MaterialPageRoute(builder: (_) => const RootDeciderScreen()),
           (route) => false,
         );
       }
@@ -849,7 +849,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Choose when the vault should automatically lock again after unlocking (max 5 minutes):',
+              'Choose when the vault should lock after you leave or exit the app (stays unlocked while you are actively using the app, max 5 minutes):',
               style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
             ),
             const SizedBox(height: 12),

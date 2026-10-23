@@ -10,7 +10,6 @@ import '../../providers/document_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../../services/document_open_service.dart';
 import '../../services/google_drive_service.dart';
-import '../home/home_screen.dart';
 
 class FolderSelectionScreen extends StatefulWidget {
   final String accountKey;
@@ -1205,9 +1204,9 @@ class _FolderSelectionScreenState extends State<FolderSelectionScreen>
       if (widget.isReSelecting) {
         Navigator.of(context).pop();
       } else {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
-        );
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
       }
     }
   }

@@ -20,11 +20,27 @@ class DocumentVaultApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       home: const RootDeciderScreen(),
+      builder: (context, child) {
+        final lock = context.watch<AppLockProvider>();
+        return Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (_) => lock.recordInteraction(),
+          child: Stack(
+            children: [
+              ?child,
+              if (lock.isLocked)
+                const Positioned.fill(
+                  child: AppLockScreen(),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
 
-/// Determines whether to show App Lock, Connect Drive, Folder Selection, or Main Dashboard.
+/// Determines whether to show Connect Drive, Folder Selection, or Main Dashboard.
 class RootDeciderScreen extends StatefulWidget {
   const RootDeciderScreen({super.key});
 
@@ -46,9 +62,13 @@ class _RootDeciderScreenState extends State<RootDeciderScreen> {
     final auth = context.read<AuthProvider>();
     final sync = context.read<SyncProvider>();
 
+    // Restore authenticated session and sync state before checking lock
+    await Future.wait([
+      auth.initialize(),
+      sync.loadSyncState(),
+    ]);
+
     await lock.initialize();
-    await auth.initialize();
-    await sync.loadSyncState();
 
     if (mounted) {
       setState(() {
@@ -91,27 +111,15 @@ class _RootDeciderScreenState extends State<RootDeciderScreen> {
       );
     }
 
-    final lock = context.watch<AppLockProvider>();
-    if (lock.isLocked) {
-      return const AppLockScreen();
-    }
-
     final auth = context.watch<AuthProvider>();
     final sync = context.watch<SyncProvider>();
 
-    Widget content;
     if (!auth.isSignedIn) {
-      content = const ConnectDriveScreen();
+      return const ConnectDriveScreen();
     } else if (!sync.hasManagedFolder) {
-      content = FolderSelectionScreen(accountKey: auth.currentUser!.email);
+      return FolderSelectionScreen(accountKey: auth.currentUser!.email);
     } else {
-      content = const MainNavigationScreen();
+      return const MainNavigationScreen();
     }
-
-    return Listener(
-      behavior: HitTestBehavior.translucent,
-      onPointerDown: (_) => lock.recordInteraction(),
-      child: content,
-    );
   }
 }

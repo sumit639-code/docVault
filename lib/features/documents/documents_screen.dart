@@ -1169,7 +1169,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
             );
           }
         } else if (action == 'download') {
-          DocumentOpenService.openOnDevice(context, doc);
+          _downloadSingleDocument(context, doc);
         } else if (action == 'delete') {
           _deleteDocumentPrompt(context, doc);
         }
@@ -1289,6 +1289,91 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
             ),
           );
         }
+      }
+    }
+  }
+
+  /// Downloads a single document directly to DocumentVault, preventing duplicates.
+  Future<void> _downloadSingleDocument(
+    BuildContext context,
+    DocumentModel doc,
+  ) async {
+    final docProvider = context.read<DocumentProvider>();
+    final authService = context.read<AuthProvider>().authService;
+    final driveService = GoogleDriveService(authService: authService);
+
+    // Prevent duplicate download if file is already on device
+    final existingFile = await docProvider.checkDuplicateLocalFile(doc);
+    if (existingFile != null && existingFile.existsSync() && existingFile.lengthSync() > 0) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('"${doc.name}" is already downloaded!'),
+            backgroundColor: AppTheme.primaryTeal,
+            action: SnackBarAction(
+              label: 'Open',
+              textColor: Colors.white,
+              onPressed: () => docProvider.openOfflineDocument(doc),
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Downloading "${doc.name}" to DocumentVault...',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+
+    try {
+      await docProvider.downloadDocumentForOffline(
+        driveService: driveService,
+        document: doc,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Downloaded "${doc.name}" to DocumentVault!'),
+            backgroundColor: AppTheme.accentGreen,
+            action: SnackBarAction(
+              label: 'Open',
+              textColor: Colors.white,
+              onPressed: () => docProvider.openOfflineDocument(doc),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Download failed: $e'),
+            backgroundColor: AppTheme.accentRed,
+          ),
+        );
       }
     }
   }

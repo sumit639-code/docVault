@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:document_vault/services/app_lock_service.dart';
 import 'package:document_vault/providers/app_lock_provider.dart';
@@ -79,6 +80,75 @@ void main() {
       await fakeService.setAutoLockTimeout(99999);
       final timeout = await fakeService.getAutoLockTimeout();
       expect(timeout, 300);
+    });
+
+    test('Transitions isLocked correctly across lock and unlock', () async {
+      // Initially unlocked after fake authenticate succeeds during initialize
+      expect(provider.isLocked, isFalse);
+
+      // Lock manually
+      provider.lock();
+      expect(provider.isLocked, isTrue);
+
+      // Unlock
+      final result = await provider.unlock();
+      expect(result, isTrue);
+      expect(provider.isLocked, isFalse);
+      expect(provider.authError, isNull);
+    });
+
+    test('Does NOT lock while actively opened in foreground', () async {
+      await provider.setAutoLockTimeout(30);
+      expect(provider.isLocked, isFalse);
+
+      // Record interactions and check state
+      provider.recordInteraction();
+      expect(provider.isLocked, isFalse);
+    });
+
+    test('Locks immediately on exit when timeout is 0 (Immediately)', () async {
+      await provider.setAutoLockTimeout(0);
+      expect(provider.isLocked, isFalse);
+
+      // Simulate app exit (paused/background)
+      provider.didChangeAppLifecycleState(AppLifecycleState.paused);
+      expect(provider.isLocked, isTrue);
+    });
+
+    test('Preserves unlocked state if resumed before timeout expires', () async {
+      await provider.setAutoLockTimeout(60); // 1 minute
+      expect(provider.isLocked, isFalse);
+
+      // Exit app
+      provider.didChangeAppLifecycleState(AppLifecycleState.paused);
+      expect(provider.isLocked, isFalse); // Stays unlocked during grace period
+
+      // Simulate 15 seconds elapsed (less than 60s)
+      provider.simulateBackgroundDuration(const Duration(seconds: 15));
+
+      // Resume app
+      provider.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      expect(provider.isLocked, isFalse); // Still unlocked!
+    });
+
+    test('Locks and prompts unlock when exit duration exceeds timeout', () async {
+      await provider.setAutoLockTimeout(60); // 1 minute
+      expect(provider.isLocked, isFalse);
+
+      // Exit app
+      provider.didChangeAppLifecycleState(AppLifecycleState.paused);
+
+      // Simulate 70 seconds elapsed (exceeded 60s)
+      provider.simulateBackgroundDuration(const Duration(seconds: 70));
+
+      // Resume app
+      provider.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      // Immediately locked upon detecting timeout exceeded
+      expect(provider.isLocked, isTrue);
+
+      // Once biometric prompt finishes async
+      await Future.delayed(Duration.zero);
+      expect(provider.isLocked, isFalse);
     });
   });
 }

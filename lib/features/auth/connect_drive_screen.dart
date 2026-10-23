@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/sync_provider.dart';
-import '../folders/folder_selection_screen.dart';
 
 class ConnectDriveScreen extends StatelessWidget {
   const ConnectDriveScreen({super.key});
@@ -124,12 +123,8 @@ class ConnectDriveScreen extends StatelessWidget {
                           if (user != null) {
                             final syncProvider = context.read<SyncProvider>();
                             await syncProvider.fetchFolders();
-                            if (context.mounted) {
-                              Navigator.of(context).pushReplacement(
-                                MaterialPageRoute(
-                                  builder: (_) => FolderSelectionScreen(accountKey: user.email),
-                                ),
-                              );
+                            if (context.mounted && Navigator.of(context).canPop()) {
+                              Navigator.of(context).pop();
                             }
                           }
                         }

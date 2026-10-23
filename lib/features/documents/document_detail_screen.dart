@@ -408,6 +408,22 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                   onPressed: _isDownloading
                       ? null
                       : () async {
+                          final existingFile = await docProvider.checkDuplicateLocalFile(doc);
+                          if (existingFile != null && existingFile.existsSync() && existingFile.lengthSync() > 0) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'File is already downloaded and available in DocumentVault!',
+                                  ),
+                                  backgroundColor: AppTheme.primaryTeal,
+                                ),
+                              );
+                            }
+                            await _loadDocument();
+                            return;
+                          }
+
                           setState(() {
                             _isDownloading = true;
                             _downloadStatus = 'Saving to DocumentVault...';
